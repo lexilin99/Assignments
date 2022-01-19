@@ -1,0 +1,527 @@
+---
+title: "ECON 613 Assignment 1"
+author: "Xin Lin"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r message=FALSE, warning=FALSE}
+# Load packages
+library(tidyverse)
+library(magrittr)
+library(janitor)
+library(knitr)
+library(kableExtra)
+library(DescTools)
+library(reshape)
+
+# Import household datasets
+dat04hh <- read_csv("data/dathh2004.csv")
+dat05hh <- read_csv("data/dathh2005.csv")
+dat06hh <- read_csv("data/dathh2006.csv")
+dat07hh <- read_csv("data/dathh2007.csv")
+dat08hh <- read_csv("data/dathh2008.csv")
+dat09hh <- read_csv("data/dathh2009.csv")
+dat10hh <- read_csv("data/dathh2010.csv")
+dat11hh <- read_csv("data/dathh2011.csv")
+dat12hh <- read_csv("data/dathh2012.csv")
+dat13hh <- read_csv("data/dathh2013.csv")
+dat14hh <- read_csv("data/dathh2014.csv")
+dat15hh <- read_csv("data/dathh2015.csv")
+dat16hh <- read_csv("data/dathh2016.csv")
+dat17hh <- read_csv("data/dathh2017.csv")
+dat18hh <- read_csv("data/dathh2018.csv")
+dat19hh <- read_csv("data/dathh2019.csv")
+
+# Import individual datasets
+dat04ind <- read_csv("data/datind2004.csv")
+dat05ind <- read_csv("data/datind2005.csv")
+dat06ind <- read_csv("data/datind2006.csv")
+dat07ind <- read_csv("data/datind2007.csv")
+dat08ind <- read_csv("data/datind2008.csv")
+dat09ind <- read_csv("data/datind2009.csv")
+dat10ind <- read_csv("data/datind2010.csv")
+dat11ind <- read_csv("data/datind2011.csv")
+dat12ind <- read_csv("data/datind2012.csv")
+dat13ind <- read_csv("data/datind2013.csv")
+dat14ind <- read_csv("data/datind2014.csv")
+dat15ind <- read_csv("data/datind2015.csv")
+dat16ind <- read_csv("data/datind2016.csv")
+dat17ind <- read_csv("data/datind2017.csv")
+dat18ind <- read_csv("data/datind2018.csv")
+dat19ind <- read_csv("data/datind2019.csv")
+
+# abadon scientific notation in R
+options(scipen = 999)
+```
+
+
+# Exercise 1 Basic Statistics
+
+### 1. Number of households surveyed in 2007
+
+```{r}
+nrow(dat07hh)
+```
+
+\underline{Answer:} The number of households surveyed in 2007 is 10,498
+
+### 2. Number of households with marital status “Couple with kids” in 2005
+
+```{r}
+nrow(dat05hh[which(dat05hh$mstatus == "Couple, with Kids"),]) 
+```
+
+\underline{Answer:} The number of household with marital status “Couple with kids” in 2005 is 3,374
+
+### 3. Number of individuals surveyed in 2008
+
+```{r}
+nrow(dat08ind)
+```
+
+\underline{Answer:} The number of individuals surveyed in 2008 is 25,510
+
+### 4. Number of individuals aged between 25 and 35 in 2016
+
+```{r}
+nrow(dat16ind[which(dat16ind$age %in% c(25:35)),])
+```
+
+\underline{Answer:} The number of individuals aged between 25 and 35 in 2016 is 2,765
+
+### 5. Cross-table gender/profession in 2009
+
+```{r}
+crosstable <- dat09ind %>%
+  tabyl(profession, gender)
+kable(crosstable) %>% 
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), 
+                full_width=FALSE)
+```
+
+### 6. Distribution of wages in 2005 and 2019. Report the mean, the standard deviation, the inter-decile ratio D9/D1 and the Gini coefficient
+
+```{r warning=FALSE}
+# 2005 distribition plot
+dat05ind_new <- dat05ind[-which(dat05ind$wage %in% c(0, NA)),]
+ggplot(dat05ind_new, aes(x=wage)) + 
+  geom_density() +
+  theme_minimal() +
+  labs(title = "Distribution of Wage in 2005") +
+  theme(plot.title = element_text(face = "plain", size = 15, hjust = 0.5, color = "black"))
+# 2005 mean
+mean(dat05ind_new$wage) 
+# 2005 sd
+sd(dat05ind_new$wage) 
+# 2005 inter-decile ratio D9/D1
+quantile(dat05ind_new$wage, probs = 0.9)/quantile(dat05ind_new$wage, probs = 0.1) 
+# 2005 Gini coefficient
+Gini(dat05ind_new$wage)
+
+# 2019 distribution plot
+dat19ind_new <- dat19ind[-which(dat19ind$wage %in% c(0, NA)),]
+ggplot(dat19ind_new, aes(x=wage)) + 
+  geom_density() +
+  theme_minimal() +
+  labs(title = "Distribution of Wage in 2019") +
+  theme(plot.title = element_text(face = "plain", size = 15, hjust = 0.5, color = "black"))
+# 2019 mean
+mean(dat19ind_new$wage) 
+# 2019 sd
+sd(dat19ind_new$wage) 
+# 2019 inter-decile ratio D9/D1
+quantile(dat19ind_new$wage, probs = 0.9) / quantile(dat19ind_new$wage, probs = 0.1) 
+# 2019 Gini coefficient
+Gini(dat19ind_new$wage)
+```
+
+\underline{Answer:} In 2005, the mean of wage is \$22,443.03, the standard deviation is \$18,076.71, the inter-decile ratio D9/D1 is 8.896525, and the Gini coefficient is 0.3771135. In 2019, the mean of wage is \$27,578.84, the standard deviation is \$25,107.19, the inter-decile ratio D9/D1 is 13.8623, and the Gini coefficient is 0.399121.
+
+### 7. Distribution of age in 2010. Plot an histogram. Is there any difference between men and women?
+
+```{r}
+# histogram
+ggplot(dat10ind, aes(x=age)) + 
+  geom_histogram(aes(y=..density..), fill = 'grey', bins = 30) +
+  geom_density() +
+  theme_minimal() +
+  labs(title = "Histogram of Age in 2010") +
+  theme(plot.title = element_text(face = "plain", size = 15, hjust = 0.5, color = "black"))
+
+# histogram by age
+ggplot(dat10ind, aes(x=age, color=gender)) + 
+  geom_histogram(aes(y=..density..), fill = 'white', bins = 50) +
+  geom_density() +
+  theme_minimal() +
+  labs(title = "Histogram of Age in 2010 by Gender") +
+  theme(plot.title = element_text(face = "plain", size = 15, hjust = 0.5, color = "black"))
+```
+
+\underline{Answer:} From the histogram by gender below, we can observe that the percentage of under 30 is higher in males and the percentage of above 30 is higher in females.
+
+### 8. Number of individuals in Paris in 2011
+
+```{r}
+# merge the data sets
+dat11 <- as.data.frame(merge(x = dat11ind, y = dat11hh, by = "idmen"))
+length(which(dat11$location == "Paris"))
+```
+
+\underline{Answer:} The number of individuals in Paris in 2011 is 3,514
+
+
+
+\newpage
+# Exercise 2 Merge Datasets
+
+### 1. Read all individual datasets from 2004 to 2019. Append all these datasets
+
+```{r}
+dathh <- rbind(dat04hh, dat05hh, dat06hh, dat07hh, dat08hh, dat09hh, dat10hh, dat11hh, 
+               dat12hh, dat13hh, dat14hh, dat15hh, dat16hh, dat17hh, dat18hh, dat19hh)
+```
+
+### 2. Read all household datasets from 2004 to 2019. Append all these datasets
+
+```{r}
+datind <- rbind(dat04ind, dat05ind, dat06ind, dat07ind, dat08ind, dat09ind, dat10ind, dat11ind, 
+                dat12ind, dat13ind, dat14ind, dat15ind, dat16ind, dat17ind, dat18ind, dat19ind)
+```
+
+### 3. List the variables that are simultaneously present in the individual and household datasets
+
+```{r}
+dathh_col_name <- names(dathh)
+datind_col_name <- names(datind)
+intersect(dathh_col_name, datind_col_name)
+```
+
+\underline{Answer:} The variables that are simultaneously present in the individual and household datasets are "X1", "idmen", and "year".
+
+### 4. Merge the appended individual and household datasets
+
+```{r}
+dat <- merge(x = datind, y = dathh, by = c("idmen", "year"), all.x = TRUE)
+```
+
+### 5. Number of households in which there are more than four family members
+
+```{r message=FALSE, warning=FALSE}
+# frequency table
+n_occur <- data.frame(table(dat$idmen, dat$year))
+
+# find all id's of households satisfying the condition
+n_occur <- n_occur %>%
+  filter(Freq > 4) %>%
+  group_by(Var2) %>%
+  summarise(n = n())
+
+# change the name of columns and print the number of households satisfying the condition for each year
+colnames(n_occur) <- c("Year", "Number of Households")
+kable(n_occur) %>% 
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), 
+                full_width=FALSE)
+```
+
+### 6. Number of households in which at least one member is unemployed
+
+```{r message=FALSE, warning=FALSE}
+# frequency table
+n_occur2 <- data.frame(table(dat$idmen, dat$year, dat$empstat))
+
+# find all id's of households satisfying the condition
+n_occur2 <- n_occur2 %>% 
+  filter(Var3 == "Unemployed") %>%
+  filter(Freq >= 1)%>%
+  group_by(Var2) %>%
+  summarise(n = n())
+
+# change the name of columns and print the number of households satisfying the condition for each year
+colnames(n_occur2) <- c("Year", "Number of Households")
+kable(n_occur2) %>% 
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), 
+                full_width=FALSE)
+```
+
+### 7. Number of households in which at least two members are of the same profession
+
+```{r message=FALSE, warning=FALSE}
+# frequency table
+n_occur3 <- data.frame(table(dat$idmen, dat$year, dat$profession))
+
+# find all id's of households satisfying the condition
+n_occur3 <- n_occur3 %>%
+  filter(Freq >= 2) %>%
+  group_by(Var2) %>%
+  summarise(n = n())
+
+# change the name of columns and print the number of households satisfying the condition for each year
+colnames(n_occur3) <- c("Year", "Number of Households")
+kable(n_occur3) %>% 
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), 
+                full_width=FALSE)
+```
+
+### 8. Number of individuals in the panel that are from household-Couple with kids
+
+```{r message=FALSE, warning=FALSE}
+# frequency table
+n_occur4 <- data.frame(table(dat$idmen, dat$year, dat$mstatus))
+
+# find all id's of households satisfying the condition
+n_occur4 <- n_occur4 %>%
+  filter(Var3 == "Couple, with Kids") %>%
+  filter(Freq >= 1) %>%
+  group_by(Var2) %>%
+  summarise(n = sum(Freq))
+
+# change the name of columns and print the number of individuals satisfying the condition for each year
+colnames(n_occur4) <- c("Year", "Number of Individuals")
+kable(n_occur4) %>% 
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), 
+                full_width=FALSE)
+```
+
+### 9. Number of individuals in the panel that are from Paris
+
+```{r message=FALSE, warning=FALSE}
+# frequency table
+n_occur5 <- data.frame(table(dat$idmen, dat$year, dat$location))
+
+# find all id's of households satisfying the condition
+n_occur5 <- n_occur5 %>%
+  filter(Var3 == "Paris") %>% 
+  filter(Freq >= 1) %>%
+  group_by(Var2) %>%
+  summarise(n = sum(Freq))
+
+# change the name of columns and print the number of individuals satisfying the condition for each year
+colnames(n_occur5) <- c("Year", "Number of Individuals")
+kable(n_occur5) %>% 
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), 
+                full_width=FALSE)
+```
+
+### 10. Find the household with the most number of family members. Report its idmen
+
+```{r}
+# frequency table
+n_occur6 <- data.frame(table(dat$idmen, dat$year))
+
+# find all id's of households satisfying the condition
+idmen_most_fm <- n_occur6 %>%
+  filter(Freq == max(n_occur6$Freq)) %>%
+  select(Var1, Var2, Freq)
+
+# change the name of columns and print the number of households satisfying the condition for each year
+colnames(idmen_most_fm) <- c("idmen", "Year", "Family Numbers")
+kable(idmen_most_fm) %>% 
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), 
+                full_width=FALSE)
+```
+
+\underline{Answer:} The idmen of the household with the most number of family members are 2207811124040100 and 2510263102990100. Also, the number of their family member is 14.
+
+### 11. Number of households present in 2010 and 2011.
+
+```{r}
+# number of households present in 2010 
+hh_10 <- dat %>%
+  filter(year %in% c(2010)) 
+hh_10 <- unique(hh_10$idmen)
+length(hh_10) 
+
+# number of households present in 2011
+hh_11 <- dat %>%
+  filter(year %in% c(2011)) 
+hh_11 <- unique(hh_11$idmen)
+length(hh_11) 
+
+# number of households present in 2010 and 2011
+hh_10_11 <- intersect(hh_10, hh_11)
+length(hh_10_11)
+```
+
+\underline{Answer:} There are 11,050 households present in 2010 and 11,360 households present in 2011. Also, there are 8,984 households present in both 2010 and 2011.
+
+\newpage
+# Exercise 3 Migration
+
+### 1. Find out the year each household enters and exit the panel. Report the distribution of the time spent in the survey for each household
+
+```{r message=FALSE, warning=FALSE}
+# create three new variables: year enter, year exit, and time
+dat_time <- dat %>%
+  group_by(idmen) %>%
+  summarise(year_enter = min(year), # year enter
+            year_exit = max(year), # year exit
+            time = year_exit - year_enter) %>%
+  ungroup()
+```
+
+```{r}
+# distrbution of time spent in the survey for each household
+ggplot(dat_time, aes(x=time)) + 
+  geom_histogram(aes(y=..density..), fill = 'grey', bins = 17) +
+  theme_minimal() +
+  labs(title = "Histogram of Time") +
+  theme(plot.title = element_text(face = "plain", size = 15, hjust = 0.5, color = "black"))
+```
+
+### 2. Based on datent, identify whether or not a household moved into its current dwelling at the year of survey. Report the first 10 rows of your result and plot the share of individuals in that situation across years
+
+```{r message=FALSE, paged.print=FALSE}
+# create a new variable: whether_move, if move: 1, if not move: 0
+dat_whether <- dat %>%
+  mutate(whether_move = ifelse(year == datent, 1, 0))
+
+# print the first ten rows
+head(dat_whether,10)
+
+# create a table of shares accross years
+move_share <- dat_whether %>%
+  tabyl(year, whether_move) %>%
+  adorn_totals(where = c("row", "col")) 
+
+# create a new variable: share, representing the share of inds in that situation
+move_share <- as.data.frame(move_share)
+move_share$share <- move_share$'1' / move_share$Total
+move_share <- move_share[-17,]
+
+# plot the share of individuals in that situation across years
+ggplot(move_share, aes(x=year, y=share)) + 
+  geom_bar(stat = "identity", width = 0.8, fill = 'grey') +
+  lims(y = c(0,0.1)) +
+  theme_minimal() +
+  labs(title = "Share of individuals who migrated at the year of survey using 'datent'") +
+  theme(plot.title = element_text(face = "plain", size = 12, hjust = 0.5, color = "black")) 
+```
+
+### 3. Based on myear and move, identify whether or not household migrated at the year of survey. Report the first 10 rows of your result and plot the share of individuals in that situation across years.
+
+```{r}
+# create a new variable: whether_migrate, if migrate: 1, if not migrate: 0
+dat_whether <- dat_whether %>%
+  mutate(whether_migrate = ifelse(year<=2014, ifelse(year==myear,1,0), ifelse(move==2,1,0)))
+                                  
+# print the first ten rows
+head(dat_whether,10)
+
+# create a table of shares accross years
+move_share2 <- dat_whether %>%
+  tabyl(year, whether_migrate) %>%
+  adorn_totals(where = c("row", "col"))
+
+# create a new variable: share, representing the share of inds in that situation
+move_share2 <- as.data.frame(move_share2)
+move_share2$share <- move_share2$'1' / move_share2$Total
+move_share2 <- move_share2[-17,]
+
+# plot the share of individuals in that situation across years
+ggplot(move_share2, aes(x=year, y=share)) + 
+  geom_bar(stat = "identity", width = 0.8, fill = 'grey') +
+  lims(y = c(0,0.1)) +
+  theme_minimal() +
+  labs(title = "Share of individuals who migrated at the year of survey using 'myear' and 'move'") +
+  theme(plot.title = element_text(face = "plain", size = 12, hjust = 0.5, color = "black")) 
+```
+
+### 4. Mix the two plots you created above in one graph, clearly label the graph. Do you prefer one method over the other? Justify.
+
+```{r}
+# mix move_share and migrate_share in one dataset
+move_share3 <- data.frame(move_share$year, move_share$share, move_share2$share)
+colnames(move_share3) <- c("year", "datent_share", "myear_share")
+move_share3 <- melt(move_share3, id.vars='year')
+
+# mix move_share and migrate_share in one plot
+ggplot(move_share3, aes(x=year, y=value, fill=variable)) +
+    geom_bar(stat='identity', position='dodge') +
+    lims(y = c(0,0.1)) +
+    theme_minimal() +
+    labs(title = "Share of individuals who migrated at the year of survey") +
+    theme(plot.title = element_text(face = "plain", size = 12, hjust = 0.5, color = "black")) 
+```
+
+\underline{Answer:} I prefer using the variable 'datent' to determine whether the surveyed individuals migrated in the year of survey. Since the second method uses two meausres 'myear' and 'move' to determine the share of individuals who migrated at the year of survey, these two measures are not consistent as shown in the above graph: the share after 2014 are much higher. Therefore, I prefer the first method using 'datent' since it is more consistent without change of measures acrross years.
+
+### 5. For households who migrate, find out how many households had at least one family member changed his/her profession or employment status
+
+```{r}
+# find id of households who migrated
+idmen_migrate <- dat_whether %>%
+  filter(whether_move == 1) %>%
+  select(idmen) 
+idmen_migrate_vec <- unique(idmen_migrate$idmen) # 4154
+
+# keep the data of households who migrated
+dat_migrate <- dat_whether %>%
+  filter(idmen %in% idmen_migrate_vec) 
+
+# In the survey year: individuals who migrated
+dat_migrate_survey <- dat_migrate[which(dat_migrate$whether_move==1),] 
+
+# Not in the survey year: individuals who migrated not in the survey year
+dat_migrate_not_survey <- dat_migrate[which(dat_migrate$whether_move==0),] 
+
+# merge the above two data sets by idmen, idind, respondent, gender, mstatus, and datent
+dat_compare <- merge(x = dat_migrate_survey, 
+                     y = dat_migrate_not_survey,
+                     by = c("idmen", "idind", "respondent", "gender", "mstatus", "datent"))
+dat_compare <- as.data.frame(dat_compare)
+
+# On individual level,
+# compare the difference between empstat.x and empstat.y and profession.x and profession.y 
+# Next, on household level,
+# find the number of household using unique()
+length(unique(dat_compare[which(dat_compare$empstat.x != dat_compare$empstat.y |
+                                  dat_compare$profession.x != dat_compare$profession.y),'idmen']))
+
+```
+
+\underline{Answer:} For households who migrate, the number of households who had at least one family member changed his/her profession or employment status is 1,378.
+
+# Exercise 4 Attrition
+
+### Compute the attrition across each year, where attrition is defined as the reduction in the number of indi- viduals staying in the data panel. Report your final result as a table in proportions
+
+```{r message=FALSE, warning=FALSE}
+# add a year of entry and year of exit for all individuals
+dat_attrition <- merge(x = dat, y = dat_time, by = "idmen", all.x = TRUE)
+
+# add a variable 'stay': whether the individual stays in the panel for the year surveyed
+# 1 if 'year' != 'year_exit' and 0 if 'year' == 'year_exit'
+dat_attrition <- dat_attrition %>%
+  mutate(stay = ifelse(year == year_exit, 0, 1))
+
+# stay = 0 means reduction in the number of individuals staying in the data panel
+# attrition rate = reduction in the number of individuals / total number of individuals
+attrition_rate <- dat_attrition %>%
+  group_by(year) %>%
+  summarise(Reduction = length(which(stay == 0)),
+            Total = n(),
+            'Attrition Rate' = Reduction / Total)
+kable(attrition_rate) %>% 
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), 
+                full_width=FALSE)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
