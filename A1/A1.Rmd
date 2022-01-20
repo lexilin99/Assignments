@@ -81,10 +81,14 @@ nrow(dat05hh[which(dat05hh$mstatus == "Couple, with Kids"),])
 ### 3. Number of individuals surveyed in 2008
 
 ```{r}
+# number of individuals
 nrow(dat08ind)
+
+# number of individuals with unique idind
+length(unique(dat08ind$idind))
 ```
 
-\underline{Answer:} The number of individuals surveyed in 2008 is 25,510
+\underline{Answer:} The number of individuals surveyed in 2008 is 25,510, and the number of individuals with unique idind surveyed in 2008 is 10,828.
 
 ### 4. Number of individuals aged between 25 and 35 in 2016
 
@@ -106,14 +110,16 @@ kable(crosstable) %>%
 
 ### 6. Distribution of wages in 2005 and 2019. Report the mean, the standard deviation, the inter-decile ratio D9/D1 and the Gini coefficient
 
-```{r warning=FALSE}
+```{r message=FALSE, warning=FALSE}
 # 2005 distribition plot
-dat05ind_new <- dat05ind[-which(dat05ind$wage %in% c(0, NA)),]
-ggplot(dat05ind_new, aes(x=wage)) + 
+ggplot(dat05ind, aes(x=wage)) + 
+  geom_histogram(aes(y = ..density..)) +
   geom_density() +
   theme_minimal() +
   labs(title = "Distribution of Wage in 2005") +
   theme(plot.title = element_text(face = "plain", size = 15, hjust = 0.5, color = "black"))
+# drop NA and 0's to get the statistics
+dat05ind_new <- dat05ind[-which(dat05ind$wage %in% c(0, NA)),]
 # 2005 mean
 mean(dat05ind_new$wage) 
 # 2005 sd
@@ -124,12 +130,14 @@ quantile(dat05ind_new$wage, probs = 0.9)/quantile(dat05ind_new$wage, probs = 0.1
 Gini(dat05ind_new$wage)
 
 # 2019 distribution plot
-dat19ind_new <- dat19ind[-which(dat19ind$wage %in% c(0, NA)),]
-ggplot(dat19ind_new, aes(x=wage)) + 
+ggplot(dat19ind, aes(x=wage)) + 
+  geom_histogram(aes(y = ..density..)) +
   geom_density() +
   theme_minimal() +
   labs(title = "Distribution of Wage in 2019") +
   theme(plot.title = element_text(face = "plain", size = 15, hjust = 0.5, color = "black"))
+# drop NA and 0's to get the statistics
+dat19ind_new <- dat19ind[-which(dat19ind$wage %in% c(0, NA)),]
 # 2019 mean
 mean(dat19ind_new$wage) 
 # 2019 sd
@@ -140,7 +148,7 @@ quantile(dat19ind_new$wage, probs = 0.9) / quantile(dat19ind_new$wage, probs = 0
 Gini(dat19ind_new$wage)
 ```
 
-\underline{Answer:} In 2005, the mean of wage is \$22,443.03, the standard deviation is \$18,076.71, the inter-decile ratio D9/D1 is 8.896525, and the Gini coefficient is 0.3771135. In 2019, the mean of wage is \$27,578.84, the standard deviation is \$25,107.19, the inter-decile ratio D9/D1 is 13.8623, and the Gini coefficient is 0.399121.
+\underline{Answer:} In order to get the statistics, I dropped all missing values and 0's in the wage. In 2005, the mean of wage is \$22,443.03, the standard deviation is \$18,076.71, the inter-decile ratio D9/D1 is 8.896525, and the Gini coefficient is 0.3771135. In 2019, the mean of wage is \$27,578.84, the standard deviation is \$25,107.19, the inter-decile ratio D9/D1 is 13.8623, and the Gini coefficient is 0.399121.
 
 ### 7. Distribution of age in 2010. Plot an histogram. Is there any difference between men and women?
 
@@ -172,7 +180,7 @@ dat11 <- as.data.frame(merge(x = dat11ind, y = dat11hh, by = "idmen"))
 length(which(dat11$location == "Paris"))
 ```
 
-\underline{Answer:} The number of individuals in Paris in 2011 is 3,514
+\underline{Answer:} The number of individuals in Paris in 2011 is 3,514.
 
 
 
@@ -436,7 +444,7 @@ ggplot(move_share2, aes(x=year, y=share)) +
 ```{r}
 # mix move_share and migrate_share in one dataset
 move_share3 <- data.frame(move_share$year, move_share$share, move_share2$share)
-colnames(move_share3) <- c("year", "datent_share", "myear_share")
+colnames(move_share3) <- c("year", "Method 1", "Method 2")
 move_share3 <- melt(move_share3, id.vars='year')
 
 # mix move_share and migrate_share in one plot
@@ -448,43 +456,52 @@ ggplot(move_share3, aes(x=year, y=value, fill=variable)) +
     theme(plot.title = element_text(face = "plain", size = 12, hjust = 0.5, color = "black")) 
 ```
 
-\underline{Answer:} I prefer using the variable 'datent' to determine whether the surveyed individuals migrated in the year of survey. Since the second method uses two meausres 'myear' and 'move' to determine the share of individuals who migrated at the year of survey, these two measures are not consistent as shown in the above graph: the share after 2014 are much higher. Therefore, I prefer the first method using 'datent' since it is more consistent without change of measures acrross years.
+\underline{Answer:} I prefer the first method: using the variable 'datent' to determine whether the surveyed individuals migrated in the year of survey (Exercise 3.2). Since the second method (Exercise 3.3) uses two meausres 'myear' and 'move' to determine the share of individuals who migrated at the year of survey, these two measures are inconsistent as shown in the above graph: the share after 2014 are much higher. Therefore, I prefer the first method using 'datent' since it is more consistent without change of measures acrross years.
 
 ### 5. For households who migrate, find out how many households had at least one family member changed his/her profession or employment status
 
-```{r}
-# find id of households who migrated
+```{r message=FALSE, warning=FALSE}
+# find id and year of households who migrated
 idmen_migrate <- dat_whether %>%
   filter(whether_move == 1) %>%
-  select(idmen) 
-idmen_migrate_vec <- unique(idmen_migrate$idmen) # 4154
+  group_by(idmen, year) %>%
+  summarise(move_when_survey = n())
 
-# keep the data of households who migrated
-dat_migrate <- dat_whether %>%
-  filter(idmen %in% idmen_migrate_vec) 
+# keep only migrated household and useful variables
+dat_migrate <- merge(idmen_migrate, dat, by = c('year', 'idmen')) %>%
+  select(year, idmen, idind, profession, empstat)
+  
+# find the new empstat and profession for each migrated households
+dat_migrate_next_year <- dat_migrate %>%
+  select(idind, year, idmen) %>%
+  mutate(year = year + 1) # 'year' is next year but not current year
+dat_migrate_next_year <- merge(dat_migrate_next_year, dat, 
+                               by = c("year", "idind", "idmen"))
+dat_migrate_next_year <- dat_migrate_next_year %>%
+  mutate(year = year - 1) %>% # 'year' is current year
+  select(year, idmen, idind, profession, empstat)
+colnames(dat_migrate_next_year)[4:5] <- c("new_profession", "new_empstat")
 
-# In the survey year: individuals who migrated
-dat_migrate_survey <- dat_migrate[which(dat_migrate$whether_move==1),] 
+# add new empstat and profession to migrated household dataset
+dat_migrate2 <- merge(dat_migrate_next_year, dat_migrate, 
+                     by = c('year', 'idind', 'idmen')) %>%
+  mutate(year_of_change = year + 1) 
 
-# Not in the survey year: individuals who migrated not in the survey year
-dat_migrate_not_survey <- dat_migrate[which(dat_migrate$whether_move==0),] 
+# find whether the migrated households change their profession or empstat
+# add a new variable 'whether_change': 1 if change and 0 if not change
+dat_migrate2 <- dat_migrate2 %>%
+  mutate(whether_change = ifelse(empstat != new_empstat | profession != new_profession, 1, 0)) %>%
+  group_by(year_of_change, idmen) %>%
+  filter(whether_change == 1) %>%
+  group_by(year_of_change) %>%
+  summarise(length(unique(idmen)))
 
-# merge the above two data sets by idmen, idind, respondent, gender, mstatus, and datent
-dat_compare <- merge(x = dat_migrate_survey, 
-                     y = dat_migrate_not_survey,
-                     by = c("idmen", "idind", "respondent", "gender", "mstatus", "datent"))
-dat_compare <- as.data.frame(dat_compare)
-
-# On individual level,
-# compare the difference between empstat.x and empstat.y and profession.x and profession.y 
-# Next, on household level,
-# find the number of household using unique()
-length(unique(dat_compare[which(dat_compare$empstat.x != dat_compare$empstat.y |
-                                  dat_compare$profession.x != dat_compare$profession.y),'idmen']))
-
+# print the number of migrated households who change empstat or profession
+colnames(dat_migrate2) <- c("Year of Change", "Number of Households")
+kable(dat_migrate2) %>% 
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), 
+                full_width=FALSE)
 ```
-
-\underline{Answer:} For households who migrate, the number of households who had at least one family member changed his/her profession or employment status is 1,378.
 
 # Exercise 4 Attrition
 
@@ -506,6 +523,7 @@ attrition_rate <- dat_attrition %>%
   summarise(Reduction = length(which(stay == 0)),
             Total = n(),
             'Attrition Rate' = Reduction / Total)
+colnames(attrition_rate)[1] = "Year"
 kable(attrition_rate) %>% 
   kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), 
                 full_width=FALSE)
