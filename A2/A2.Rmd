@@ -1,0 +1,559 @@
+---
+title: "ECON 613 Assignment 2 OLS and Probit"
+author: "Xin Lin"
+date: "1/28/2022"
+output: pdf_document
+---
+
+```{r message=FALSE, warning=FALSE}
+# Load packages
+library(tidyverse)
+library(magrittr)
+library(janitor)
+library(knitr)
+library(kableExtra)
+library(plm)
+library(lmtest)
+
+# abadon scientific notation in R
+options(scipen = 999)
+```
+
+
+# Exercise 1 OLS Estimate
+
+```{r message=FALSE, warning=FALSE}
+# import dataset
+dat <- read_csv("data/datind2009.csv")
+
+# clean the data set by excluding values with NA and 0
+dat_clean <- dat %>%
+  filter(wage != 'NA' & wage != 0) %>%
+  filter(age != 'NA' & wage != 0)
+```
+
+### 1. Calculate the correlation between Y and X
+```{r}
+# direct computatition
+X <- dat_clean[,9:10] # keep variables: wage and age
+n <- nrow(dat_clean)
+Xs <- scale(X, center=TRUE, scale=TRUE)
+R <- t(Xs) %*% Xs / (n-1)
+R[1,2]
+
+# use function
+cor(dat_clean$wage, dat_clean$age)
+```
+
+\underline{Answer:} The correlation between Y and X is 0.143492.
+
+### 2. Calculate the coefficients on this regression: $\hat{\beta} = (X^TX)^{-1}X^TY$
+```{r}
+# direct computatition
+y <- dat_clean$wage 
+x <- cbind(1, dat_clean$age)
+beta_hat <- solve(t(x) %*% x) %*% t(x) %*% y
+beta_hat
+
+# use function
+lm(dat_clean$wage ~ dat_clean$age)
+```
+
+\underline{Answer:}
+```{r message=FALSE, warning=FALSE, echo = FALSE}
+# print the result
+ans <- as.data.frame(beta_hat)
+colnames(ans) <- c("Coefficient")
+rownames(ans) <- c("Intercept", "Age")
+kable(ans) %>%
+kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width=FALSE)
+```
+
+### 3. Calculate the standard errors of $\beta$ using OLS and bootstrap respectively and comment on the difference between the two strategies
+```{r message=FALSE, warning=FALSE}
+# Method 1. use the standard formulas of the OLS
+# residuals
+y_hat <- x %*% beta_hat
+e_hat <- y - y_hat
+# residual standard error
+sigma2 <- (t(e_hat) %*% e_hat) / (n - 1)
+sigma <- sqrt(sigma2)
+# standard error
+diag_xx <- diag(solve(t(x) %*% x))
+beta_se <- sigma * sqrt(diag_xx)
+beta_se
+```
+
+```{r}
+# Method 2. use bootstrap with 49 replications 
+set.seed(999)
+R <- 49 # number of bootstraps
+nind <- nrow(dat_clean) # number of individuals
+nvar <- 2  # number of variables
+outs <- mat.or.vec(R, nvar)
+for (i in 1:R) {
+  samp <- sample(1:nind, nind,rep=TRUE)
+  dat_samp <- dat_clean[samp,]
+  reg <- lm(wage ~ age,data = dat_samp)
+  outs[i,] <- reg$coefficients
+}
+beta_se_49 <- apply(outs,2,sd)
+beta_se_49
+```
+
+```{r}
+# Method 3. use bootstrap with 499 replications 
+R <- 499 # number of bootstraps
+nind <- nrow(dat_clean) # number of individuals
+nvar <- 2  # number of variables
+outs <- mat.or.vec(R, nvar)
+for (i in 1:R) {
+  samp <- sample(1:nind, nind,rep=TRUE)
+  dat_samp <- dat_clean[samp,]
+  reg <- lm(wage ~ age,data = dat_samp)
+  outs[i,] <- reg$coefficients
+}
+beta_se_499 <- apply(outs,2,sd)
+beta_se_499
+```
+
+\underline{Answer:}
+```{r message=FALSE, warning=FALSE, echo = FALSE}
+# print the result
+ans <- cbind(beta_se, beta_se_49, beta_se_499)
+colnames(ans) <- c("OLS", "Bootstrap_49", "Bootstrap_499")
+rownames(ans) <- c("Intercept", "Age")
+kable(ans) %>%
+kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width=FALSE)
+```
+
+
+# Exercise 2 Detrend Data
+
+```{r message=FALSE, warning=FALSE}
+# import data sets
+dat05ind <- read_csv("data/datind2005.csv") 
+dat06ind <- read_csv("data/datind2006.csv") 
+dat07ind <- read_csv("data/datind2007.csv") 
+dat08ind <- read_csv("data/datind2008.csv") 
+dat09ind <- read_csv("data/datind2009.csv") 
+dat10ind <- read_csv("data/datind2010.csv") 
+dat11ind <- read_csv("data/datind2011.csv") 
+dat12ind <- read_csv("data/datind2012.csv") 
+dat13ind <- read_csv("data/datind2013.csv") 
+dat14ind <- read_csv("data/datind2014.csv") 
+dat15ind <- read_csv("data/datind2015.csv") 
+dat16ind <- read_csv("data/datind2016.csv") 
+dat17ind <- read_csv("data/datind2017.csv") 
+dat18ind <- read_csv("data/datind2018.csv")
+
+# merge the above data sets
+dat_ex2 <- rbind(dat05ind, dat06ind, dat07ind, dat08ind, dat09ind, dat10ind, dat11ind,
+                dat12ind, dat13ind, dat14ind, dat15ind, dat16ind, dat17ind, dat18ind)
+
+# clean the data set by excluding values with NA and 0
+dat_ex2 <- dat_ex2 %>%
+  filter(wage != 'NA' & wage != 0) %>%
+  filter(age != 'NA' & wage != 0)
+```
+
+### 1. Create a categorical variable ag, which bins the age variables into the following groups: “18-25”, “26- 30”, “31-35”, “36-40”,“41-45”, “46-50”,“51-55”, “56-60”, and “60+”
+```{r}
+dat_ex2 <- dat_ex2 %>%
+  filter(age >= 18) %>%
+  mutate(ag = ifelse(age%in%c(18:25), "18-25",
+                     ifelse(age%in%c(26:30), "26-30",
+                            ifelse(age%in%c(31:35), "31-35",
+                                   ifelse(age%in%c(36:40), "36-40",
+                                          ifelse(age%in%c(41:45), "41-45",
+                                                 ifelse(age%in%c(46:50), "46-50",
+                                                        ifelse(age%in%c(51:55), "51-55",
+                                                               ifelse(age%in%c(56:60), "56-60", "60+")))))))))
+# check the results
+unique(dat_ex2$ag)
+```
+
+### 2. Plot the wage of each age group across years. Is there a trend?
+```{r message=FALSE, warning=FALSE}
+ggplot(dat_ex2, aes(x=as.character(year), y=wage)) +
+  geom_boxplot(aes(fill=ag), outlier.shape = 21) +
+  theme_minimal() +
+  labs(title = "Distribution of Wage by Age Group across Years") +
+  theme(plot.title = element_text(face = "plain", size = 15, hjust = 0.5, color = "black"))
+```
+
+From the above graph, we can see that there is a trend accross the years: as age gets older, wage increases until individuals achieve their middle age and then declines.
+
+### 3. Consider $Y_{it}=\beta X_{it}+\gamma_{t}+e_{it}$. After including a time fixed effect, how do the estimated coefficients change?
+```{r message=FALSE, warning=FALSE}
+reg_ex2 <- plm(wage ~ age, 
+           data = dat_ex2,
+           index = "year", 
+           model = "within")
+coeftest(reg_ex2)
+```
+
+\underline{Answer:} After including a time fixed effect, the estimated coefficient on age becomes larger as shown below
+```{r message=FALSE, warning=FALSE, echo = FALSE}
+# print the result
+ans <- as.data.frame(c(230.9923, 297.8165))
+colnames(ans) <- c("Coefficient on Age")
+rownames(ans) <- c("No Time Fixed Effect", "With Time Fixed Effect")
+kable(ans) %>%
+kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width=FALSE)
+```
+
+
+# Exercise 3 Numerical Optimization
+
+### 1. Exclude all individuals who are inactive
+```{r}
+dat_ex3 <- dat07ind %>%
+  filter(empstat %in% c("Unemployed", "Employed")) %>% # exclue inactive
+  mutate(empstat=ifelse(empstat == "Employed", 1, 0)) # 1 if employed and 0 if unemployed
+```
+
+### 2. Write a function that returns the likelihood of the probit of being employed
+```{r}
+# write the function
+# b is the coefficients, x is regressor, and y is response variable
+flike <- function(b, x, y) {
+  xbeta <- b[1] + b[2]*x
+  prob <- pnorm(xbeta) # standard normal
+  prob[prob > 0.999999] <- 0.999999 
+  prob[prob < 0.000001] <- 0.000001 
+  # to avoid log(0) in log(b) and log(1-b)
+  # ensure that the probability is less than one and greater than 0
+  p1 <- log(prob) # represent the log prob of (y=1)
+  p0 <- log(1-prob) # represent the log prob of (y=0)
+  like <- y * p1 + (1-y) * p0 # 
+  return(-sum(like)) # return negative allows us to maximize
+}
+```
+
+### 3. Optimize the model and interpret the coefficients. You can use pre-programmed optimization packages
+```{r message=FALSE, warning=FALSE}
+# initialize 
+time <- 100
+result <- mat.or.vec(time, 3) # the first two rows are coef and the third row is minimizing value
+
+# optimize
+for (i in 1:time) {
+  searchv = runif(2, -5, 5) # random starting search value
+  res = optim(searchv, 
+              fn = flike, 
+              method = "BFGS", 
+              control = list(trace = 6, maxit = 3000),
+              x = dat_ex3$age, 
+              y = dat_ex3$empstat)
+  result[i,] = c(res$par, res$value) 
+}
+
+# print the minimum negative log likelihood
+result <- as.data.frame(result)
+result[which(result$V3 == min(result$V3)), ]
+```
+
+\underline{Answer:} By optimizing the model, I get that the estimated coefficient on intercept is 1.043905, the estimated coefficient on age is 0.0069316, and the minimum negative loglikelihood is 3555.891. The coefficients can not be interpreted directly in the probit model, but we can know that age has a positive effect on market participation without controlling other factors.
+
+### 4. Can you estimate the same model including wages as a determinant of labor market participation? Explain.
+```{r}
+# write the function
+# b is the coefficients, x1 and x2 are regressors, and y is response variable
+flike2 <- function(b, x1, x2, y) {
+  xbeta <- b[1] + b[2]*x1 + b[3]*x2
+  prob <- pnorm(xbeta) 
+  prob[prob > 0.999999] <- 0.999999 
+  prob[prob < 0.000001] <- 0.000001 
+  p1 <- log(prob)
+  p0 <- log(1-prob) 
+  like <- y * p1 + (1-y) * p0 
+  return(-sum(like)) 
+}
+
+# initialize 
+time <- 100
+result2 <- mat.or.vec(time, 4) 
+
+# clean the data set with NA
+dat_ex3_clean <- dat_ex3 %>%
+  filter(wage != 'NA',
+         age != 'NA',
+         empstat != 'NA')
+
+# optimize
+for (i in 1:time) {
+  searchv = runif(3, -5, 5)
+  res = optim(searchv, 
+              fn = flike2, 
+              method = "BFGS", 
+              control = list(trace = 6, maxit = 1000),
+              x1 = dat_ex3_clean$age, 
+              x2 = dat_ex3_clean$wage,
+              y = dat_ex3_clean$empstat)
+  result2[i,] = c(res$par, res$value) 
+}
+
+# print the minimum negative log likelihood
+result2 <- as.data.frame(result2)
+result2[which(result2$V4 == min(result2$V4)), ]
+```
+
+No, we cannot estimate the same model including wages as a determinant of labor market participation because unemployed people generally have zero wage; however, there are a lot of outliers in our data set: some unemployed people have large wages. Therefore, we cannot include wages in our model.
+
+
+# Exercise 4 Discrete Choice
+
+```{r message=FALSE, warning=FALSE}
+# merge the 2005-2015 data sets
+dat_ex4 <- rbind(dat05ind, dat06ind, dat07ind, dat08ind, dat09ind, dat10ind, dat11ind,
+                 dat12ind, dat13ind, dat14ind, dat15ind)
+```
+
+### 1. Exclude all individuals who are inactive
+```{r}
+dat_ex4 <- dat_ex4 %>%
+  # exclue inactive
+  filter(empstat %in% c("Unemployed", "Employed")) %>% 
+  # 1 if employed and 0 if unemployed
+  mutate(empstat=ifelse(empstat == "Employed", 1, 0)) %>% 
+  # make year dummy variables
+  mutate(dum = 1) %>%
+  pivot_wider(names_from = year, values_from = dum, values_fill = 0) 
+```
+
+### 2. Write and optimize the probit, logit, and the linear probability models
+```{r}
+# get the regressors
+y <- dat_ex4$empstat
+x <- dat_ex4$age
+y06 <- dat_ex4$'2006'
+y07 <- dat_ex4$'2007'
+y08 <- dat_ex4$'2008'
+y09 <- dat_ex4$'2009'
+y10 <- dat_ex4$'2010'
+y11 <- dat_ex4$'2011'
+y12 <- dat_ex4$'2011'
+y13 <- dat_ex4$'2012'
+y14 <- dat_ex4$'2014'
+y15 <- dat_ex4$'2015'
+```
+
+## 1) Probit Model
+```{r}
+# return the likelihood of probit function
+probit_like <- function(b, x, y, y06, y07, y08, y09, y10, y11, y12, y13, y14, y15) {
+  xbeta <- b[1] + b[2]*x + b[3]*y06 + b[4]*y07 + b[5]*y08 + b[6]*y09 + 
+    b[7]*y10 + b[8]*y11 + b[9]*y12 + b[10]*y13 + b[11]*y14 + b[12]*y15
+  prob <- pnorm(xbeta) # standard normal
+  prob[prob > 0.999999] <- 0.999999 
+  prob[prob < 0.000001] <- 0.000001 
+  p1 <- log(prob) 
+  p0 <- log(1-prob) 
+  like <- y * p1 + (1-y) * p0 
+  return(-sum(like)) 
+}
+
+# initialize
+time <- 100
+result_probit <- mat.or.vec(time, 13) 
+
+# optimize
+for (i in 1:time) {
+  searchv <- runif(12, -5, 5) 
+  res <- optim(searchv, 
+               fn = probit_like, 
+               method = "BFGS", 
+               control = list(trace = 6, maxit = 1000),
+               x = x, y = y, 
+               y06 = y06, y07 = y07, y08 = y08, y09 = y09, y10 = y10, 
+               y11 = y11, y12 = y12, y13 = y13, y14 = y14, y15 = y15)
+  result_probit[i,] <- c(res$par, res$value) 
+}
+
+# print the minimum negative log likelihood
+result_probit <- as.data.frame(result_probit)
+result_probit[which(result_probit$V13 == min(result_probit$V13)), ] 
+```
+
+## 2) Logit Model
+```{r}
+# return the likelihood of logit function
+logit_like <- function(b, x, y, y06, y07, y08, y09, y10, y11, y12, y13, y14, y15) {
+  xbeta <- b[1] + b[2]*x + b[3]*y06 + b[4]*y07 + b[5]*y08 + b[6]*y09 + 
+    b[7]*y10 + b[8]*y11 + b[9]*y12 + b[10]*y13 + b[11]*y14 + b[12]*y15
+  prob <- exp(xbeta) / (1+exp(xbeta))
+  prob[prob > 0.999999] <- 0.999999 
+  prob[prob < 0.000001] <- 0.000001 
+  p1 <- log(prob) 
+  p0 <- log(1-prob) 
+  like <- y * p1 + (1-y) * p0 
+  return(-sum(like)) 
+}
+
+# initialize
+time <- 100
+result_logit <- mat.or.vec(time, 13) 
+
+# optimize
+for (i in 1:time) {
+  searchv <- runif(12, -5, 5) 
+  res <- optim(searchv, 
+               fn = logit_like, 
+               method = "BFGS", 
+               control = list(trace = 6, maxit = 1000),
+               x = x, y = y, 
+               y06 = y06, y07 = y07, y08 = y08, y09 = y09, y10 = y10, 
+               y11 = y11, y12 = y12, y13 = y13, y14 = y14, y15 = y15)
+  result_logit[i,] <- c(res$par, res$value) 
+}
+
+# print the minimum negative log likelihood
+result_logit <- as.data.frame(result_logit)
+result_logit[which(result_logit$V13 == min(result_logit$V13)), ] 
+```
+
+## 3) Linear Model
+```{r message=TRUE, warning=FALSE}
+# get the value of regrssors and response variable
+y_ex4 <- dat_ex4$empstat
+x_ex4 <- rbind(rep(1,nrow(dat_ex4)), dat_ex4$age, dat_ex4$'2006', dat_ex4$'2007',
+               dat_ex4$'2008', dat_ex4$'2009', dat_ex4$'2010', dat_ex4$'2011', 
+               dat_ex4$'2012', dat_ex4$'2013', dat_ex4$'2014', dat_ex4$'2015')
+
+# solve for the coefficients
+beta_linear <- solve(x_ex4 %*% t(x_ex4)) %*% x_ex4 %*% y_ex4
+beta_linear
+```
+
+### 3. Interpret and compare the estimated coefficients. How significant are they?
+
+\underline{Answer:} Here are the estimated coefficients I get from the previous part:
+```{r message=FALSE, warning=FALSE, echo = FALSE}
+# print the result
+probit <- t(result_probit[which(result_probit$V13 == min(result_probit$V13)), -13])
+logit <- t(result_logit[which(result_logit$V13 == min(result_logit$V13)), -13])
+linear <- beta_linear
+ans <- cbind(probit, logit, linear)
+rownames(ans) <- c("Intercept", "Age", "2006", "2007", "2008", "2009", 
+                   "2010", "2011", "2012", "2013", "2014", "2015")
+colnames(ans) <- c("Probit Model", "Logit Model", "Linear Model")
+kable(ans) %>%
+kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width=FALSE)
+```
+
+The estimated coefficients are different among three models. 
+
+Firstly, let's look at the coefficeint on Intercept. It is positive across the three models; however, their values do not have explicit meaning, so, we cannot interpret them directly. But together with the coefficient on Age (which is also positive across the three models), we can conclude that there is a positive probability that individuals get employed. For the linear model, we can conclude that the probability for an eighteen-year-old individual getting employed is 0.7977 + 18 * 0.002336 = 83.97\%, holding the other variables constant.
+
+Next, let's look at the coefficient on Age. It is also positive across the three models. For the probit and logit model, we can conclude that when the age increases, the probability of being employed also increases. For the linear model, we can conclude that when the age increases by one year, the probability of being employed increases by 0.2933\%.
+
+Also, given the asymptotic of MLE and OLS estimators, the coefficients from the three models are all statistically significant.
+
+
+# Exercise 5 Marginal Effects
+
+### 1. Compute the marginal effect of the previous probit and logit models
+```{r}
+# calculate the marginal effect evaluated at the mean on the base year: 2005
+dat_ex5 <- dat_ex4[dat_ex4$'2005' == 1, ]
+xbar <- mean(dat_ex5$age)
+
+# probit model
+probit_b <- probit[1:2,]
+probit_ME <- dnorm(probit_b[1]+probit_b[2]*xbar)*probit_b[2]
+probit_ME 
+
+# logit model
+logit_b <- logit[1:2,]
+e2 <- exp(-logit_b[1]-logit_b[2]*xbar)
+logit_ME <- logit_b[2]*e2/((1+e2)^2)
+logit_ME
+```
+
+\underline{Answer:} Here are the marginal effects for probit and logit models:
+```{r message=FALSE, warning=FALSE, echo = FALSE}
+ans <- cbind(probit_ME, logit_ME)
+rownames(ans) <- c("Marginal Effect")
+colnames(ans) <- c("Probit Model", "Logit Model")
+kable(ans) %>%
+kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width=FALSE)
+```
+
+### 2. Construct the standard errors of the marginal effects
+```{r eval = FALSE}
+# get the regressors and response variable
+dat2 <- cbind.data.frame(y, x, y06, y07, y08, y09, y10, y11, y12, y13, y14, y15)
+
+# write the function that returns the coefficients of the model
+get_coef <- function(likefn, dat){
+  time <- 100
+  result <- mat.or.vec(time, 13)
+  for (i in 1:time){
+    searchv <- runif(12, -2, 2)
+    res <- optim(searchv,
+                 fn = likefn,
+                 method = "BFGS",
+                 control=list(trace=6, REPORT=1, maxit=1000),
+                 x = dat$x, y = dat$y, y06 = dat$y06, 
+                 y07 = dat$y07, y08 = dat$y08, y09 = dat$y09, 
+                 y10 = dat$y10, y11 = dat$y11, y12 = dat$y12, 
+                 y13 = dat$y13, y14 = dat$y14, y15 = dat$y15)
+    result[i,] <- c(res$par, res$value)
+  }
+  result <- as.data.frame(result)
+  coef <- result[which(result$V13 == min(result$V13)), ] 
+  return(coef[,-13])
+}
+    
+# bootstrap: replicate 49 times for 12 coefficients
+set.seed(999)
+R <- 49 
+n <- nrow(dat2)
+
+# probit model
+resultsProbit <- mat.or.vec(R, 1)
+for (i in 1:R) {
+  # sample data using bootstrap
+  dat_boot <- dat2[sample(1:n, n, replace=TRUE), ] 
+  # use the above function to get the coefficients of probit model
+  coef <- get_coef(probit_like, dat_boot) 
+  # estimate the probit model
+  x_bar <- mean(dat_boot$x)
+  resultsProbit[i] <- dnorm(as.numeric(coef[1])+as.numeric(coef[2])*x_bar)*as.numeric(coef[2])
+}
+sd_probit <- sd(resultsProbit)
+
+# logit model
+resultsLogit <- mat.or.vec(R, 1)
+for (i in 1:R) {
+  # sample data using bootstrap
+  dat_boot <- dat2[sample(1:n, n, replace=TRUE), ] 
+  # use the above function to get the coefficients of logit model
+  coef <- get_coef(logit_like, dat_boot) 
+  # estimate the probit model
+  x_bar <- mean(dat_boot$x)
+  epow <- exp(-as.numeric(coef[1])-as.numeric(coef[2])*x_bar)
+  resultsLogit[i] <- as.numeric(coef[2])*epow / ((1+epow)^2)
+}
+sd_logit <- sd(resultsLogit)
+```
+
+\underline{Answer:} Here are the standard errors of the marginal effects for probit and logit models:
+```{r message=FALSE, warning=FALSE, echo = FALSE}
+ans <- cbind(c(0.00010022), c(0.000095878))
+rownames(ans) <- c("Standard Error")
+colnames(ans) <- c("Probit Model", "Logit Model")
+kable(ans) %>%
+kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width=FALSE)
+```
+
+
+
+
+
+
+
+
+
+
