@@ -344,7 +344,7 @@ ggplot(data=dat, aes(income)) +
 
 ### 2. Propose a model to deal with the censoring problem
 
-\textbf{\underline{Answer:}} \underline{\textbf{Tobit model}} is optimal for dealing with the issue of censored data. 
+\textbf{\underline{Answer:}} Tobit model.
 
 
 ### 3. Estimate the model above
@@ -359,14 +359,15 @@ dat_tobit <- dat_ols
 # estimate the tobit model by optimizing the likelihood function
 # y is censored for values above 100,000
 tobit_like <- function(par, x1, x2, x3, x4, x5, x6, y){
+  d <- log(100000)  # censored value
   y_hat <- 1*par[1] + x1*par[2] + x2*par[3] + x3*par[4] + x4*par[5] + x5*par[6] + x6*par[7]
   sigma <- par[8]
-  pdf <- dnorm(y, y_hat, sigma, log = TRUE)
-  cdf <- pnorm((log(100000)-y_hat)/sigma, log = TRUE)
-  cdf[cdf > 0.999999] = 0.999999
-  cdf[cdf < 0.000001] = 0.000001
-  like <- ifelse(y >= log(100000), pdf, cdf)
-  return(-sum(like)) 
+  cdf <- pnorm((y_hat-d)/sigma)
+  pdf <- dnorm((y-y_hat)/sigma)
+  cdf[cdf>0.999999] = 0.999999
+  cdf[cdf<0.000001] = 0.000001
+  log_like <- sum(ifelse(y == d, log(pdf), log(cdf))-log(sigma))
+  return(-log_like)
 }
 
 # specify X and y
@@ -379,9 +380,8 @@ x6 <- as.matrix(dat_tobit$edu)
 y <- as.matrix(dat_tobit$ln_income)
 
 # optimize the likelihood function
-par <- c(1,1,1)
-tobit_res <- optim(par, fn = tobit_like, method = "BFGS", 
-                   control = list(trace=6, REPORT=1, maxit=1000), 
+tobit_res <- optim(runif(7,-20,20), fn = tobit_like, method="BFGS",
+                   control=list(trace=6,REPORT=1,maxit=1000),
                    x1=x1, x2=x2, x3=x3, x4=x4, x5=x5, x6=x6, y = y, hessian=TRUE)
 tobit_res$par
 ```
