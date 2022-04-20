@@ -1,0 +1,570 @@
+---
+title: "Homework 4: Censoring and Panel Data"
+author: "Xin Lin"
+output: pdf_document
+---
+
+```{r message=FALSE, warning=FALSE}
+# Load packages
+library(tidyverse)
+library(readxl)
+library(magrittr)
+library(janitor)
+library(plyr)
+library(formattable)
+library(knitr)
+library(kableExtra)
+library(censReg)
+library(panelr)
+library(plm)
+
+# abadon scientific notation in R
+options(scipen = 999)
+
+# set the starting number used to generate random sample
+set.seed(999)
+
+# import dataset
+dat <- read_csv("data/dat_A4.csv")
+dat_panel <- read_csv("data/dat_A4_panel.csv")
+```
+
+
+# Exercise 1 Preparing the Data
+
+### 1. Create new variables
+```{r message=FALSE, warning=FALSE}
+# create "age"
+# age = 2019 - birth year
+dat <- dat %>%
+  mutate(age = 2019 - KEY_BDATE_Y_1997)
+
+# create "work_exp"
+# work_exp = sum of #weeks working at each job / 52
+dat_work <- dat %>%
+  select(contains("CV_WKSWK_JOB")) %>%
+  mutate(work_exp = round(rowSums(., na.rm = TRUE)/52, digits = 2))
+dat$work_exp <- dat_work$work_exp
+
+# create edu-related variables
+# the following only need to deal with the "ungraded" and NA: recode as 0
+# create "bio_father_edu"
+dat <- dat %>%
+  mutate(bio_father_edu = ifelse(CV_HGC_BIO_DAD_1997 == 95, 0, CV_HGC_BIO_DAD_1997))
+# create "bio_mother_edu"
+dat <- dat %>%
+  mutate(bio_mother_edu = ifelse(CV_HGC_BIO_MOM_1997 == 95, 0, CV_HGC_BIO_MOM_1997))
+# create "res_father_edu"
+dat <- dat %>%
+  mutate(res_father_edu = ifelse(CV_HGC_RES_DAD_1997 == 95, 0, CV_HGC_RES_DAD_1997))
+# create "res_mother_edu"
+dat <- dat %>%
+  mutate(res_mother_edu = ifelse(CV_HGC_RES_MOM_1997 == 95, 0, CV_HGC_RES_MOM_1997))
+# recode "YSCH.3113_2019" into numeric variable
+dat <- dat %>%
+  mutate(edu = ifelse(YSCH.3113_2019==1, 0, 
+                      ifelse(YSCH.3113_2019%in%c(2,3), 12,  
+                              ifelse(YSCH.3113_2019==4, 14, 
+                                      ifelse(YSCH.3113_2019==5, 16,
+                                              ifelse(YSCH.3113_2019==6, 18,
+                                                      ifelse(YSCH.3113_2019%in%c(7,8), 21, NA)))))))
+```
+
+
+### 2. Data visualizations
+### 1) Plot the income data by age groups
+
+```{r message=FALSE, warning=FALSE}
+# make the dat a data frame
+dat <- dat %>%
+  as.data.frame() %>%
+  dplyr::rename(income = YINC_1700_2019)
+# compute mean income by gener
+mu1 <- ddply(dat, "age", summarise, grp.mean=mean(income, na.rm = T))
+# plot
+ggplot(dat, aes(income, color = factor(age))) + 
+  geom_density() +
+  geom_vline(data=mu1, aes(xintercept=grp.mean, color=factor(age)), linetype="dashed") + 
+  xlab("income") +
+  ylab("density") +
+  labs(title = "Income by Age") +
+  theme_bw() + 
+  theme(plot.title = element_text(face = "plain", size = 15, hjust = 0.5, color = "black"))
+```
+
+\textbf{\underline{Interpretations:}} From the plot, we can observe that the distribution for each age group is almost the same, which means that the correlation between age and incoem may be insignificant. However, if looking at the mean income for each age group, we can observe that 38-year-old and 39-year-old participants have the highest income and 35-year-old participants have the least income, so there may be a positive correlation between age and income.
+
+### 2) Plot the income data by gender groups
+
+```{r message=FALSE, warning=FALSE}
+# create text gender variable
+dat <- dat %>%
+  mutate(gender = ifelse(KEY_SEX_1997 == 1, "male", "female"))
+# compute mean income by gener
+mu2 <- ddply(dat, "gender", summarise, grp.mean=mean(income, na.rm = T))
+# plot
+ggplot(data=dat, aes(income, color = factor(gender))) + 
+  geom_density() +
+  geom_vline(data=mu2, aes(xintercept=grp.mean, color=gender), linetype="dashed") + 
+  xlab("income") +
+  ylab("density") +
+  labs(title = "Income by Gender") + 
+  theme_bw() +
+  theme(plot.title = element_text(face = "plain", size = 15, hjust = 0.5, color = "black"))
+```
+
+\textbf{\underline{Interpretations:}} From the plot, we can observe from both the distribution and mean that male participants earn significantly higher income than females do. 
+
+### 3) Plot the income data by number of children
+
+```{r message=FALSE, warning=FALSE}
+# treate NA in CV_BIO_CHILD_HH_U18_2019 as 0
+dat <- dat %>%
+  mutate(children = ifelse(is.na(CV_BIO_CHILD_HH_U18_2019), 0, CV_BIO_CHILD_HH_U18_2019))
+# compute mean income by gener
+mu3 <- ddply(dat, "children", summarise, grp.mean=mean(income, na.rm = T))
+# plot
+ggplot(data=dat, aes(income, color = factor(children))) + 
+  geom_density() +
+  geom_vline(data=mu3, aes(xintercept=grp.mean, color=factor(children)), linetype="dashed") + 
+  xlab("income") +
+  ylab("density") +
+  labs(title = "Income by Number of Children") + 
+  theme_bw() +
+  theme(plot.title = element_text(face = "plain", size = 15, hjust = 0.5, color = "black"))
+```
+
+\textbf{\underline{Interpretations:}} From the plot, we can observe from both the distribution and mean that participants with 4 or more children earns significantly lower than the other participants do. Participants with 1, 2, or 3 children earns the highest income among all participants. This suggests that the number of children might be negatively correlated with income.
+
+### 4) Table the share of ”0” in the income data by age groups
+
+```{r message=FALSE, warning=FALSE}
+# find the share of "0" in income by age
+share1 <- dat %>% 
+  tabyl(age, income) %>% 
+  adorn_totals(where = c("row", "col")) %>% 
+  adorn_percentages() %>%
+  select(age, "0") %>%
+  dplyr::rename("share of zero income" = "0")
+# make the table
+ans <- as.data.frame(share1)
+kable(ans) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width=FALSE)
+```
+
+\textbf{\underline{Interpretations:}} The share of zero-income is very low accross all age groups, but 35-year-old and 38-year-old participants have the highest zero-income share.
+
+### 5) Table the share of ”0” in the income data by gender groups
+
+```{r message=FALSE, warning=FALSE}
+# find the share of "0" in income by gender
+share2 <- dat %>% 
+  tabyl(gender, income) %>% 
+  adorn_totals(where = c("row", "col")) %>% 
+  adorn_percentages() %>%
+  select(gender, "0") %>%
+  dplyr::rename("share of zero income" = "0")
+# make the table
+ans <- as.data.frame(share2)
+kable(ans) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width=FALSE)
+```
+
+\textbf{\underline{Interpretations:}} The share of zero-income is very low accross gender groups, but male participants have higher zero-income share than females do.
+
+### 6) Table the share of ”0” in the income data by number of children
+
+```{r message=FALSE, warning=FALSE}
+# find the share of "0" in income by gender
+share3 <- dat %>% 
+  tabyl(children, income) %>% 
+  adorn_totals(where = c("row", "col")) %>% 
+  adorn_percentages() %>%
+  select(children, "0") %>%
+  dplyr::rename("share of zero income" = "0")
+# make the table
+ans <- as.data.frame(share3)
+kable(ans) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width=FALSE)
+```
+
+\textbf{\underline{Interpretations:}} There are no observations with zero income if they have four or more children, and this might be caused by that there are fewer observations with four or more children in our dataset. From the table, we can see that participants with only one child have the highest zero-income share.
+
+
+### 7) Table the share of ”0” in the income data by marital status
+
+```{r message=FALSE, warning=FALSE}
+# recode the marital status variable
+dat <- dat %>%
+  mutate(marital_status = ifelse(CV_MARSTAT_COLLAPSED_2019 == 1, "married", 
+                                 ifelse(CV_MARSTAT_COLLAPSED_2019 == 2, "separated", 
+                                        ifelse(CV_MARSTAT_COLLAPSED_2019 == 3, "divorced",
+                                               ifelse(CV_MARSTAT_COLLAPSED_2019 == 4, "widowed", "single"))))) %>%
+  mutate(marital_status = ifelse(is.na(marital_status), "unanswered", marital_status))
+# find the share of "0" in income by gender
+share4 <- dat %>% 
+  tabyl(marital_status, income) %>% 
+  adorn_totals(where = c("row", "col")) %>% 
+  adorn_percentages() %>%
+  select(marital_status, "0") %>%
+  dplyr::rename("share of zero income" = "0")
+# make the table
+ans <- as.data.frame(share4)
+kable(ans) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width=FALSE)
+```
+
+\textbf{\underline{Interpretations:}} From the table, we can observe that separated participants have significantly higher zero-income share than the others. 
+
+
+
+
+# Exercise 2 Heckman Selection Model
+
+### 1. Specify and estimate an OLS model to explain the income variable
+
+\textbf{\underline{Answer:}} The OLS model I am going to estimate is as follows:
+$$ln(income)_i = \beta_0+\beta_1age_i+\beta_2male_i+\beta_3ubran_i+\beta_4minority_i + \beta_5work\_exp_i+\beta_6edu_i+\epsilon_i$$
+
+
+
+```{r message=FALSE, warning=FALSE}
+# recode the gender variable: 1 if male and 0 if female
+# recode the urban variable: 1 if urban and 0 if rural
+# recode the marital_status variable: 1 if married and 0 if single (never married, separated, widowed, divorced)
+# recode the race_ethnicity variable: 1 if minority (black or hispanic) and 0 if not minority
+dat <- dat %>%
+  mutate(male = ifelse(gender == "male", 1, 0),
+         urban = ifelse(CV_URBAN.RURAL_2019 == 1, 1, 0),
+         married = ifelse(marital_status == "married", 1, 0),
+         minority = ifelse(KEY_RACE_ETHNICITY_1997 %in% c(1,2), 1, 0)) %>%
+  dplyr::rename("id" = PUBID_1997)
+```
+
+
+```{r message=FALSE, warning=FALSE}
+# keep only useful variables and keep observations whose incoem > 0
+dat_ols <- dat %>%
+  select(income, age, male, urban, married, minority, work_exp, children, edu, id) %>%
+  filter(income>0) %>%
+  na.omit() %>%
+  mutate(ln_income = log(income))
+
+# use lm() to estimate the model specified above
+reg_ols <- lm(ln_income ~ age + male + urban + minority + work_exp + edu, data = dat_ols)
+summary(reg_ols)
+```
+
+\textbf{\underline{Interpretations:}} From the above results of OLS, we can observe that the coefficient on age is not significant since their P-value are less than 0.05. The coefficients on male, urban, minority, work_exp, and edu are significant. I will interpret a coefficent on a dummy variable and a coefficient on a continuous/discrete variable here: The coefficient on male $\beta_2$ means that the average income is 37.09\% higher for males compared to females', holding other variables constant. The coefficient on edu $\beta_6$ means that with an additional year of education, average income increases by 6.49%, holding other variables constant.
+
+\textbf{\underline{Selection Problem:}} In the OLS above, the observations whose income are less than or equal to 0 or missing (not reported) are excluded from regression. Also, the missingness in income data may be non-random, and it is conditional on some exogenous factors, for example, housewives / husands who are unemployed don't have any occupational income, so they may choose not to report their income. Therefore, since their income are excluded / not observable, there might be some bias when estimating the model using the (sub)sample.
+
+
+### 2. Explain why the Heckman model can deal with the selection problem
+
+\textbf{\underline{Answer:}} Heckman model corrects for selection bias using a two-stage estimator. In the first step, run a probit regression to predict the probability of earning an (occupational) income and then compute IMR=pdf(income>0)/cdf(income>0). In the second step, run OLS aagin, including IMR as a new explanatory variable, to rule out the effect of selection. 
+
+
+
+### 3. Estimate a Heckman selection model
+
+1) In the first stage of predicting the probability of earning some income, whether earning some income might be affected by the number of children in family and marital status since housewives/husbands are more likely to be not employed and not earn any income; therefore, I predict the probability of earning using the probit specified as
+$$ Pr(income\_reported=1)=\Phi(\beta_0+\beta_1age_i+\beta_2male_i+\beta_3ubran_i+\beta_4minority_i$$ 
+$$+\beta_5work\_exp_i+\beta_6edu_i+\beta_7married_i+\beta_8children_i+\epsilon_i)$$
+Then, I compute $IMR=\frac{\phi(X\hat\beta)}{\Phi(X\hat\beta)}$, where $X$ are variables specified above.
+
+2) In the second stage, I will estimate the following model:
+$$ln(income)_i = \beta_0+\beta_1age_i+\beta_2male_i+\beta_3ubran_i+\beta_4minority_i + \beta_5work\_exp_i+\beta_6edu_i+\beta_7imr_i+\epsilon_i$$
+
+```{r message=FALSE, warning=FALSE}
+# keep only useful variables
+# create a dummy to indicate whether an observation earns an income
+# 1 if income > 0; 0 otherwise
+dat_heckman <- dat %>%
+  mutate(income_non_missing = ifelse(income==0 | is.na(income), 0, 1)) %>%
+  select(income, age, male, urban, married, minority, work_exp, children, edu, id) %>%
+  na.omit() %>% 
+  mutate(income_reported = ifelse(is.na(income) | income == 0, 0, 1))
+
+# first stage: probit model for selection mechanism
+reg_probit <- glm(income_reported ~ age + male + urban + minority + work_exp + edu
+                  + married + children, data = dat_heckman)
+
+# compute IMR
+pred <- reg_probit$linear.predictors
+imr <- dnorm(pred) / pnorm(pred)
+dat_heckman$imr <- imr
+
+# keep observations whose income is greater than 0
+dat_heckman <- dat_heckman %>%
+  filter(income>0) %>%
+  mutate(ln_income = log(income))
+
+# second stage: regression for selected sample
+reg_heckman <- lm(ln_income ~ age + male + urban + minority + work_exp + edu + imr, 
+                  data = dat_heckman)
+summary(reg_heckman)
+```
+
+
+\textbf{\underline{Interpretations:}} From the table below, we can observe that both the signs and values of the coefficients remain similar to OLS in the Heckam model. In OLS, the age coefficient is not significant; however, in the Heckman selection model, the age coefficient is significant, but the minority coefficient is not significant. Also, from the Heckman model where the selection bias is ruled out, we can see that the coefficient on imr is positive. It suggests that the observed income are higher on average.
+
+
+```{r echo=FALSE}
+ols <- as.data.frame(rbind(cbind(summary(reg_ols)$coefficients[, 1], summary(reg_ols)$coefficients[, 3]), 0))
+colnames(ols) <- c("OLS coefficient","OLS t-value")
+heckman <- as.data.frame(cbind(summary(reg_heckman)$coefficients[, 1], summary(reg_heckman)$coefficients[, 3]))
+colnames(heckman) <- c("Heckman Model coefficient","Heckman Model t-value")
+
+# make the table
+ans <- as.data.frame(cbind(ols, heckman)) 
+ans <- ans[-1,]
+rownames(ans)[7] <- "imr"
+kable(ans) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width=FALSE)
+```
+
+
+
+
+# Exercise 3 Censoring
+### 1. Plot a a histogram to check the distribution of the income variable. What might be the censored value here?
+```{r message=FALSE, warning=FALSE}
+ggplot(data=dat, aes(income)) +
+  geom_histogram(aes(y=..density..), color="blue", fill="lightblue") +
+  xlab("income") +
+  ylab("density") +
+  labs(title = "Histogram of Income") + 
+  theme_bw() +
+  theme(plot.title = element_text(face = "plain",size = 15, hjust = 0.5, color = "black"))
+```
+
+\textbf{\underline{Answer:}} From the histogram above, we can observe that the data is top coded at \$100,000.
+
+
+### 2. Propose a model to deal with the censoring problem
+
+\textbf{\underline{Answer:}} \underline{\textbf{Tobit model}} is optimal for dealing with the issue of censored data. 
+
+
+### 3. Estimate the model above
+
+```{r message=FALSE, warning=FALSE}
+# use the same dataset as in the ols
+dat_tobit <- dat_ols
+```
+
+
+```{r message=FALSE, warning=FALSE, eval=FALSE}
+# estimate the tobit model by optimizing the likelihood function
+# y is censored for values above 100,000
+tobit_like <- function(par, x1, x2, x3, x4, x5, x6, y){
+  y_hat <- 1*par[1] + x1*par[2] + x2*par[3] + x3*par[4] + x4*par[5] + x5*par[6] + x6*par[7]
+  sigma <- par[8]
+  pdf <- dnorm(y, y_hat, sigma, log = TRUE)
+  cdf <- pnorm((log(100000)-y_hat)/sigma, log = TRUE)
+  cdf[cdf > 0.999999] = 0.999999
+  cdf[cdf < 0.000001] = 0.000001
+  like <- ifelse(y >= log(100000), pdf, cdf)
+  return(-sum(like)) 
+}
+
+# specify X and y
+x1 <- as.matrix(dat_tobit$age)
+x2 <- as.matrix(dat_tobit$male)
+x3 <- as.matrix(dat_tobit$urban)
+x4 <- as.matrix(dat_tobit$minority)
+x5 <- as.matrix(dat_tobit$work_exp)
+x6 <- as.matrix(dat_tobit$edu)
+y <- as.matrix(dat_tobit$ln_income)
+
+# optimize the likelihood function
+par <- c(1,1,1)
+tobit_res <- optim(par, fn = tobit_like, method = "BFGS", 
+                   control = list(trace=6, REPORT=1, maxit=1000), 
+                   x1=x1, x2=x2, x3=x3, x4=x4, x5=x5, x6=x6, y = y, hessian=TRUE)
+tobit_res$par
+```
+
+```{r message=FALSE, warning=FALSE}
+# estimate the tobit model using the package
+reg_tobit <- censReg(ln_income ~ age + male + urban + minority + work_exp + edu, 
+                     right = log(100000), data = dat_tobit)
+summary(reg_tobit)
+```
+
+\textbf{\underline{Interpretations:}} From the table below, we can observe that both the signs and values of the coefficients remain similar to OLS in the Tobit model. In both OLS and Tobit model, the age coefficient is not significant. Also, from the Tobit model, we can see that the coefficient on logSigma is the estimated standrd error of the regression. The value is comparable to the root mean squared error that would be obtained in OLS regression.
+
+
+```{r echo=FALSE}
+tobit <- as.data.frame(cbind(summary(reg_tobit)$estimate[,1], summary(reg_tobit)$estimate[,3]))
+colnames(tobit) <- c("Tobit Model coefficient", "Tobit Model coefficient")
+
+# make the table
+ans <- as.data.frame(cbind(ols, tobit)) 
+ans <- ans[-1,]
+rownames(ans)[7] <- "logSigma"
+kable(ans) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width=FALSE)
+```
+
+
+
+
+# Exercise 4 Panel Data
+
+### 1. Explain the potential ability bias when trying to explain the determinants of wages
+
+\textbf{\underline{Answer:}} There is a causal relationship between education and income. Education is a source of an accumulation of competences, and most productive individuals have an interest in studying for the longest period, entailing the probability of ability bias.
+
+
+### 2. Exploit the panel dimension of the data to propose a model to correct for the ability bias
+
+```{r message=FALSE, warning=FALSE}
+# clean the panal data set
+# rename inconsistent variables
+dat_panel <- dat_panel %>% 
+  dplyr::rename(CV_HIGHEST_DEGREE_EVER_EDT_1998 = CV_HIGHEST_DEGREE_9899_1998,
+                CV_HIGHEST_DEGREE_EVER_EDT_1999 = CV_HIGHEST_DEGREE_9900_1999,
+                CV_HIGHEST_DEGREE_EVER_EDT_2000 = CV_HIGHEST_DEGREE_0001_2000,
+                CV_HIGHEST_DEGREE_EVER_EDT_2001 = CV_HIGHEST_DEGREE_0102_2001,
+                CV_HIGHEST_DEGREE_EVER_EDT_2002 = CV_HIGHEST_DEGREE_0203_2002,
+                CV_HIGHEST_DEGREE_EVER_EDT_2003 = CV_HIGHEST_DEGREE_0304_2003,
+                CV_HIGHEST_DEGREE_EVER_EDT_2004 = CV_HIGHEST_DEGREE_0405_2004,
+                CV_HIGHEST_DEGREE_EVER_EDT_2005 = CV_HIGHEST_DEGREE_0506_2005,
+                CV_HIGHEST_DEGREE_EVER_EDT_2006 = CV_HIGHEST_DEGREE_0607_2006,
+                CV_HIGHEST_DEGREE_EVER_EDT_2007 = CV_HIGHEST_DEGREE_0708_2007,
+                CV_HIGHEST_DEGREE_EVER_EDT_2008 = CV_HIGHEST_DEGREE_0809_2008,
+                CV_HIGHEST_DEGREE_EVER_EDT_2009 = CV_HIGHEST_DEGREE_0910_2009)
+
+# convert wide to long
+dat_panel_long <- dat_panel %>%
+  long_panel(prefix='_', begin  = 1997, end = 2019, label_location = "end")
+
+# create total work experience variable
+dat_panel_work <- dat_panel_long %>%
+  rowwise() %>%
+  select(contains("CV_WKSWK_JOB")) %>%
+  mutate(work_exp = round(rowSums(.-0, na.rm = TRUE)/52, digits = 2))
+dat_panel_long$work_exp <- dat_panel_work$work_exp
+
+# rename year, income
+# create age, male, married variables
+# recode edu into numeric variables
+# keep only useful variables
+# delete observations with NA's
+dat_panel_long <- dat_panel_long %>%
+  dplyr::rename(year = wave,
+                income = "YINC-1700",
+                edu = CV_HIGHEST_DEGREE_EVER_EDT) %>%
+  rowwise() %>%
+  dplyr::mutate(age = year - KEY_BDATE_Y,
+                male = ifelse(KEY_SEX == 1, 1, 0),
+                married = ifelse(CV_MARSTAT_COLLAPSED == 1, 1, 0),
+                edu = ifelse(edu==0, 0, 
+                             ifelse(edu%in%c(1,2), 12,  
+                                    ifelse(edu==3, 14, 
+                                           ifelse(edu==4, 16,
+                                                  ifelse(edu==5, 18,
+                                                         ifelse(edu%in%c(6,7), 21, NA))))))) %>%
+  select(id, year, income, age, male, married, work_exp, edu) %>%
+  na.omit()
+```
+
+
+### 1) Estimate the model using Within Estimator
+```{r message=FALSE, warning=FALSE}
+# create new data set to estimate within estimator
+dat_within <- dat_panel_long
+  
+# calculate the mean income / edu / work_exp / married for each observation
+dat_within$mean_income <- ave(dat_within$income, dat_within$id, FUN=function(x)mean(x, na.rm=T))
+dat_within$mean_edu <- ave(dat_within$edu, dat_within$id, FUN=function(x)mean(x, na.rm=T)) 
+dat_within$mean_work_exp <- ave(dat_within$work_exp, dat_within$id, FUN=function(x)mean(x, na.rm=T)) 
+dat_within$mean_married <- ave(dat_within$married, dat_within$id, FUN=function(x)mean(x, na.rm=T))
+
+# calculate the difference for each observation
+dat_within <- dat_within %>%
+  rowwise() %>%
+  dplyr::mutate(income_diff = income - mean_income,
+                edu_diff = edu - mean_edu,
+                work_exp_diff = work_exp - mean_work_exp,
+                married_diff = married - mean_married)
+
+# estimate the model
+reg_within <- lm(income_diff ~ edu_diff + married_diff + work_exp_diff, data = dat_within)
+summary(reg_within)
+```
+
+
+
+### 2) Estimate the model using Between Estimator
+```{r message=FALSE, warning=FALSE}
+# create new data set to estimate between estimator
+dat_between <- dat_within
+
+# estimate the model
+reg_between <- lm(mean_income ~ mean_edu + mean_married + mean_work_exp, data = dat_between)
+summary(reg_between)
+```
+
+
+
+### 3) Estimate the model using Difference (any) Estimator
+```{r message=FALSE, warning=FALSE}
+# create new data set to estimate difference estimator
+dat_difference <- dat_panel_long 
+
+# calculate 
+dat_difference$fir_income <- ave(dat_difference$income, dat_difference$id, FUN=function(x)x[1])
+dat_difference$fir_edu <- ave(dat_difference$edu, dat_difference$id, FUN=function(x)x[1])
+dat_difference$fir_married <- ave(dat_difference$married, dat_difference$id, FUN=function(x)x[1])
+dat_difference$fir_work_exp <- ave(dat_difference$work_exp, dat_difference$id, FUN=function(x)x[1])
+dat_difference$fd_income <- dat_difference$income - dat_difference$fir_income
+dat_difference$fd_edu <- dat_difference$edu - dat_difference$fir_edu
+dat_difference$fd_married <- dat_difference$married - dat_difference$fir_married
+dat_difference$fd_work_exp <- dat_difference$work_exp - dat_difference$fir_work_exp
+
+# estimate the model
+reg_difference <- lm(fd_income ~ fd_edu + fd_married + fd_work_exp, data = dat_difference)
+summary(reg_difference)
+```
+
+
+
+### 3. Interpret the results from each model and explain why different models yield different parameter estimates
+
+Here are the results of the three estimators:
+
+```{r echo=FALSE}
+within <- as.data.frame(summary(reg_within)$coefficient[,1])
+between <- as.data.frame(summary(reg_between)$coefficient[,1])
+difference <- as.data.frame(summary(reg_difference)$coefficient[,1])
+
+
+# make the table
+ans <- as.data.frame(cbind(within, between, difference)) 
+ans <- ans[-1,]
+rownames(ans) <- c("education", "married", "work experience")
+colnames(ans) <- c("within", "between", "first-difference")
+kable(ans) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width=FALSE)
+```
+
+\textbf{\underline{Within Estimator:}} \textbf{education}: Income will increase by 1614.44 on average for each additional year increase in education, controlling for all time-invariant heterogeneity. \textbf{married}: it is a dummy variable, which cannot be interpreted. \textbf{work experience}: Income will increase by 2819.25 on average for each additional year increase in work experience, controlling for all time-invariant heterogeneity. 
+
+\textbf{\underline{Between Estimator:}} \textbf{education}: Income will increase by 1282.69 on average for each additional year increase in education, controlling for individual heterogeneity. \textbf{married}: it is a dummy variable, which cannot be interpreted. \textbf{work experience}: Income will increase by 1611.30 on average for each additional year increase in work experience, controlling for individual heterogeneity. 
+
+\textbf{\underline{First-Difference Estimator:}} \textbf{education}: Income in year t will increase by 813.38 on average for each additional year increase in education in year t-1. \textbf{married}: it is a dummy variable, which cannot be interpreted. \textbf{work experience}: Income in year t will increase by 2542.88 on average for each additional year increase in work experience in year t-1. 
+
+We can observe from the above table that the three estimators produce very different results, but all of the coefficients are significant, and their values are positive. The three estimators generate different results since within estimator takes the time variation and discard the individual effects; between estimator takes the individual effects and discard the time variation; and first Difference estimator takes both effects. 
+
+
+
+
+
+
+
+
+
+
